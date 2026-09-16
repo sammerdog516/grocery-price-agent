@@ -73,6 +73,7 @@ def discover_stores(location: str, radius_km: float) -> list[DiscoveredStore]:
 
     for place in data.get("places", []):
         raw_name = place.get("displayName", {}).get("text", "")
+        print(raw_name)
         retailer_name = normalize_retailer_name(raw_name)
 
         if retailer_name is None:
@@ -91,4 +92,82 @@ def discover_stores(location: str, radius_km: float) -> list[DiscoveredStore]:
 
         stores.append(store)
     
+    return stores
+
+
+PLACES_TEXT_URL = "https://places.googleapis.com/v1/places:searchText"
+
+def discover_retailer_stores(
+    location: str,
+    radius_km: float,
+    retailer_name: str,
+) -> list[DiscoveredStore]:
+    latitude, longitude = geocode_location(location)
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
+        "X-Goog-FieldMask": (
+            "places.id,"
+            "places.displayName,"
+            "places.formattedAddress,"
+            "places.location"
+            "places.regularOpeningHours"
+        ),
+    }
+
+    body = {
+        "textQuery": retailer_name,
+        "includedType": "supermarket",
+        "strictTypeFiltering": True,
+        "pageSize": 20,
+        "locationBias": {
+            "circle": {
+                "center": {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                },
+                "radius": radius_km * 1000,
+            }
+        },
+    }
+
+    response = httpx.post(
+        PLACES_TEXT_URL,
+        headers=headers,
+        json=body,
+        timeout=10.0,
+    )
+
+    response.raise_for_status()
+    data = response.json()
+
+    stores = []
+
+    for place in data.get("places", []):
+        raw_name = place.get("displayName", {}).get("text", "")
+        normalized_name = normailze_retialer_name(raw_name)
+
+        if normalized_name != retailer_name:
+            continue
+
+        ## TODO: Add distance calculation to ensure hard cutoff on specified radius 
+
+
+
+
+
+        location_data = place.get("location", {})
+
+        stores.append(
+            DiscoveredStore(
+                retailer_name=normalized_name,
+                address=place["formattedAddress"],
+                external_place_id=place["id"],
+                latitude=location_data.get("latitude"),
+                longitude=location_data.get("longitude"),
+                opening_hours=place.get("regularOpeningHours"),
+            )
+        )
+
     return stores
